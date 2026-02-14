@@ -5,22 +5,50 @@ const config = require('./config.json');
 
 const s3Client = new S3Client({ region: config.region });
 
+// Simple rate limiter
+const rateLimiter = {
+  calls: [],
+  maxCalls: 10,
+  windowMs: 60000, // 1 minute
+  
+  check() {
+    const now = Date.now();
+    this.calls = this.calls.filter(time => now - time < this.windowMs);
+    
+    if (this.calls.length >= this.maxCalls) {
+      const oldestCall = this.calls[0];
+      const waitTime = Math.ceil((this.windowMs - (now - oldestCall)) / 1000);
+      console.error(`❌ Rate limit exceeded. Wait ${waitTime}s`);
+      throw new Error('Rate limit exceeded');
+    }
+    
+    this.calls.push(now);
+  }
+};
+
 async function generateDownloadUrl(key, expirationHours) {
+  rateLimiter.check();
+  
   const hours = expirationHours || config.defaultExpirationHours;
   const expiresIn = hours * 3600;
 
-  console.log(`🔗 Generating download URL for: s3://${config.bucketName}/${key}`);
+  console.log(`🔗 Generating download URL...`);
   console.log(`⏰ Expiration: ${hours} hours`);
 
-  const command = new GetObjectCommand({
-    Bucket: config.bucketName,
-    Key: key,
-  });
+  try {
+    const command = new GetObjectCommand({
+      Bucket: config.bucketName,
+      Key: key,
+    });
 
-  const url = await getSignedUrl(s3Client, command, { expiresIn });
+    const url = await getSignedUrl(s3Client, command, { expiresIn });
 
-  console.log(`\n✅ Download URL:\n${url}`);
-  return url;
+    console.log(`\n✅ Download URL:\n${url}`);
+    return url;
+  } catch (err) {
+    console.error('❌ Failed to generate download URL');
+    throw new Error('Operation failed');
+  }
 }
 
 // CLI usage
@@ -34,7 +62,6 @@ if (require.main === module) {
   }
 
   generateDownloadUrl(key, hours).catch(err => {
-    console.error('❌ Failed:', err.message);
     process.exit(1);
   });
 }

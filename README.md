@@ -47,10 +47,34 @@ Easy file sharing between you and your OpenClaw agent using AWS S3.
 ### 1. Create S3 Bucket
 
 ```bash
-aws s3 mb s3://your-bucket-name --region us-east-1
+aws s3 mb s3://your-bucket-name --region <your-region>
 ```
 
-### 2. Configure IAM Permissions
+### 2. Configure CORS (Required for Upload Pages)
+
+The upload page feature requires CORS configuration on your S3 bucket. Create a file named `cors.json`:
+
+```json
+[
+  {
+    "AllowedHeaders": ["*"],
+    "AllowedMethods": ["GET", "POST"],
+    "AllowedOrigins": ["*"],
+    "ExposeHeaders": ["ETag"],
+    "MaxAgeSeconds": 3000
+  }
+]
+```
+
+Apply the CORS configuration:
+
+```bash
+aws s3api put-bucket-cors --bucket your-bucket-name --cors-configuration file://cors.json
+```
+
+**Note:** For production, restrict `AllowedOrigins` to specific domains instead of `"*"`.
+
+### 3. Configure IAM Permissions
 
 Your OpenClaw instance needs these S3 permissions:
 
@@ -106,11 +130,13 @@ Edit `config.json`:
 ```json
 {
   "bucketName": "your-bucket-name",
-  "region": "us-east-1",
+  "region": "<your-region>",
   "defaultExpirationHours": 24,
   "maxUploadSizeMB": 100
 }
 ```
+
+**Important:** Replace `<your-region>` with your actual AWS region (e.g., `us-east-1`, `us-west-2`, `eu-west-1`). The region must match where your S3 bucket is located.
 
 ## Common Workflows
 
@@ -129,9 +155,21 @@ Edit `config.json`:
 
 - Pre-signed URLs are temporary and expire automatically
 - Upload pages and their embedded credentials both expire in 24 hours
-- Upload pages enforce max file size limits
+- Upload pages enforce max file size limits (default 100MB)
+- All uploads are restricted to the `uploads/` directory
+- File paths are sanitized to prevent path traversal attacks
+- Rate limiting: 10 script calls per minute per script (basic protection)
 - No public bucket access required
 - All transfers use HTTPS
+
+## Limits and Rate Limiting
+
+- **Max file size**: 100MB (configurable in config.json)
+- **Rate limit**: 10 calls per minute per script
+- **S3 key length**: Max 1024 characters
+- **Expiration**: 24 hours for upload pages and credentials
+
+If you hit rate limits, wait 60 seconds before retrying.
 
 ## Troubleshooting
 
@@ -142,8 +180,13 @@ Edit `config.json`:
 
 **Upload page not working:**
 - Check browser console for errors
+- Verify CORS is configured on your S3 bucket (see AWS Setup section)
 - Verify upload page hasn't expired (24 hours)
 - Ensure file size is within limit
+
+**Rate limit errors:**
+- Wait 60 seconds before retrying
+- Each script has independent rate limiting (10 calls/minute)
 
 ## Files
 

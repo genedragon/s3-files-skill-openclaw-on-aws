@@ -7,36 +7,75 @@ const path = require('path');
 const config = require('./config.json');
 
 const s3Client = new S3Client({ region: config.region });
+const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
+
+function sanitizeS3Key(key) {
+  if (!key) return null;
+  
+  // Remove path traversal attempts and invalid characters
+  let sanitized = key
+    .replace(/\.\./g, '')
+    .replace(/^\/+/, '')
+    .replace(/[^a-zA-Z0-9._-]/g, '_');
+  
+  // Limit length
+  if (sanitized.length > 1024) {
+    sanitized = sanitized.substring(0, 1024);
+  }
+  
+  // Ensure it's in uploads directory
+  if (!sanitized.startsWith('uploads/')) {
+    sanitized = `uploads/${sanitized}`;
+  }
+  
+  return sanitized;
+}
 
 async function uploadFile(filePath, s3Key) {
   if (!fs.existsSync(filePath)) {
-    throw new Error(`File not found: ${filePath}`);
+    console.error('❌ File not found');
+    throw new Error('File not found');
+  }
+
+  // Check file size before reading
+  const stats = fs.statSync(filePath);
+  if (stats.size > MAX_FILE_SIZE) {
+    console.error('❌ File too large (max 100MB)');
+    throw new Error('File exceeds maximum size');
   }
 
   const fileContent = fs.readFileSync(filePath);
   const fileName = path.basename(filePath);
-  const key = s3Key || fileName;
+  
+  // Sanitize the S3 key
+  const key = sanitizeS3Key(s3Key) || `uploads/${Date.now()}-${fileName}`;
 
-  console.log(`📤 Uploading ${fileName} to s3://${config.bucketName}/${key}...`);
+  console.log(`📤 Uploading ${fileName}...`);
 
   const command = new PutObjectCommand({
     Bucket: config.bucketName,
     Key: key,
     Body: fileContent,
     ContentType: getContentType(fileName),
+    ContentDisposition: 'attachment',
   });
 
-  await s3Client.send(command);
-  console.log(`✅ Upload complete!`);
+  try {
+    await s3Client.send(command);
+    console.log(`✅ Upload complete!`);
 
-  // Generate download URL
-  const downloadUrl = await generateDownloadUrl(key);
-  
-  const fileSize = (fileContent.length / 1024).toFixed(2);
-  console.log(`\n📦 File: ${key} (${fileSize} KB)`);
-  console.log(`🔗 Download URL (${config.defaultExpirationHours}h):\n${downloadUrl}`);
+    // Generate download URL
+    const downloadUrl = await generateDownloadUrl(key);
+    
+    const fileSize = (fileContent.length / 1024).toFixed(2);
+    console.log(`\n📦 File: ${key} (${fileSize} KB)`);
+    console.log(`🔗 Download URL (${config.defaultExpirationHours}h):\n${downloadUrl}`);
 
-  return { key, downloadUrl };
+    return { key, downloadUrl };
+  } catch (err) {
+    console.error('❌ Upload failed');
+    throw new Error('Upload operation failed');
+  }
 }
 
 async function generateDownloadUrl(key) {
@@ -79,7 +118,6 @@ if (require.main === module) {
   }
 
   uploadFile(filePath, s3Key).catch(err => {
-    console.error('❌ Upload failed:', err.message);
     process.exit(1);
   });
 }

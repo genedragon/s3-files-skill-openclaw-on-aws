@@ -3,11 +3,33 @@ const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const { GetObjectCommand } = require('@aws-sdk/client-s3');
 const { createPresignedPost } = require('@aws-sdk/s3-presigned-post');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const config = require('./config.json');
 
 const s3Client = new S3Client({ region: config.region });
+
+// Simple rate limiter
+const rateLimiter = {
+  calls: [],
+  maxCalls: 10,
+  windowMs: 60000, // 1 minute
+  
+  check() {
+    const now = Date.now();
+    this.calls = this.calls.filter(time => now - time < this.windowMs);
+    
+    if (this.calls.length >= this.maxCalls) {
+      const oldestCall = this.calls[0];
+      const waitTime = Math.ceil((this.windowMs - (now - oldestCall)) / 1000);
+      console.error(`❌ Rate limit exceeded. Wait ${waitTime}s`);
+      throw new Error('Rate limit exceeded');
+    }
+    
+    this.calls.push(now);
+  }
+};
 
 const HTML_TEMPLATE = `<!DOCTYPE html>
 <html>
@@ -318,22 +340,26 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
 </html>`;
 
 async function generateUploadPage(maxSizeMB) {
-  const maxSize = maxSizeMB || config.maxUploadSizeMB;
-  const key = `upload-${Date.now()}`;
+  rateLimiter.check();
   
-  console.log(`📤 Generating upload page for: ${key}`);
+  const maxSize = maxSizeMB || config.maxUploadSizeMB;
+  const randomId = crypto.randomBytes(8).toString('hex');
+  const key = `uploads/${randomId}`;
+  
+  console.log(`📤 Generating upload page...`);
   console.log(`📏 Max file size: ${maxSize} MB`);
   console.log(`⏰ Expiration: 24 hours\n`);
 
-  // Generate pre-signed POST credentials
-  const { url, fields } = await createPresignedPost(s3Client, {
-    Bucket: config.bucketName,
-    Key: key,
-    Conditions: [
-      ['content-length-range', 0, maxSize * 1024 * 1024],
-    ],
-    Expires: 86400, // 24 hours - matches page expiration
-  });
+  try {
+    // Generate pre-signed POST credentials
+    const { url, fields } = await createPresignedPost(s3Client, {
+      Bucket: config.bucketName,
+      Key: key,
+      Conditions: [
+        ['content-length-range', 0, maxSize * 1024 * 1024],
+      ],
+      Expires: 86400, // 24 hours - matches page expiration
+    });
 
   // Create HTML page with credentials embedded
   let html = HTML_TEMPLATE;
@@ -342,7 +368,7 @@ async function generateUploadPage(maxSizeMB) {
   html = html.replace('__MAX_SIZE__', maxSize);
 
   // Upload the page to S3
-  const pageName = `upload-page-${Date.now()}.html`;
+  const pageName = `upload-page-${crypto.randomBytes(8).toString('hex')}.html`;
   const pageCommand = new PutObjectCommand({
     Bucket: config.bucketName,
     Key: pageName,
@@ -368,6 +394,10 @@ async function generateUploadPage(maxSizeMB) {
   console.log(`\n📦 Files will be uploaded to S3 with key: ${key}`);
 
   return { pageUrl, uploadKey: key };
+  } catch (err) {
+    console.error('❌ Failed to generate upload page');
+    throw new Error('Operation failed');
+  }
 }
 
 // CLI usage
@@ -375,7 +405,6 @@ if (require.main === module) {
   const maxSizeMB = parseInt(process.argv[2]) || config.maxUploadSizeMB;
 
   generateUploadPage(maxSizeMB).catch(err => {
-    console.error('❌ Failed:', err.message);
     process.exit(1);
   });
 }
