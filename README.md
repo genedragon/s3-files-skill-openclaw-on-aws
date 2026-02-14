@@ -91,6 +91,7 @@ node download-url.js filename.zip 24  # 24 hours expiration
 node generate-upload-page.js 100  # 100MB max file size
 ```
 Creates a beautiful HTML upload page and returns shareable link.
+**Both the page URL and upload credentials expire in 24 hours.**
 
 ### Generate raw upload credentials
 ```bash
@@ -127,6 +128,7 @@ Edit `config.json`:
 ## Security Notes
 
 - Pre-signed URLs are temporary and expire automatically
+- Upload pages and their embedded credentials both expire in 24 hours
 - Upload pages enforce max file size limits
 - No public bucket access required
 - All transfers use HTTPS
@@ -140,7 +142,7 @@ Edit `config.json`:
 
 **Upload page not working:**
 - Check browser console for errors
-- Verify upload URL hasn't expired (1 hour)
+- Verify upload page hasn't expired (24 hours)
 - Ensure file size is within limit
 
 ## Files

@@ -323,7 +323,7 @@ async function generateUploadPage(maxSizeMB) {
   
   console.log(`📤 Generating upload page for: ${key}`);
   console.log(`📏 Max file size: ${maxSize} MB`);
-  console.log(`⏰ Expiration: 1 hour\n`);
+  console.log(`⏰ Expiration: 24 hours\n`);
 
   // Generate pre-signed POST credentials
   const { url, fields } = await createPresignedPost(s3Client, {
@@ -332,7 +332,7 @@ async function generateUploadPage(maxSizeMB) {
     Conditions: [
       ['content-length-range', 0, maxSize * 1024 * 1024],
     ],
-    Expires: 3600,
+    Expires: 86400, // 24 hours - matches page expiration
   });
 
   // Create HTML page with credentials embedded
