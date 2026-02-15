@@ -14,6 +14,7 @@ Easy file sharing between you and your OpenClaw agent using AWS S3.
 ## Prerequisites
 
 - AWS account with S3 access
+- OpenClaw running on EC2 ([8-minute deployment guide](https://github.com/aws-samples/sample-OpenClaw-on-AWS-with-Bedrock))
 - Node.js installed on your OpenClaw instance
 - AWS credentials configured (IAM role or environment variables)
 
