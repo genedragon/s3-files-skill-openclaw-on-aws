@@ -146,6 +146,7 @@ Edit `config.json`:
 2. Send user the generated link
 3. User uploads via browser
 4. Agent retrieves from S3 using the upload key
+**Note:** Upload pages use presigned POST which assigns a random S3 key (e.g., `uploads/abc123def456`) before the user selects a file. Files uploaded via the upload page will not preserve the original filename or extension. This is generally not a probelm for your agent or bot, but if you do need the file back with an extension, you can just ask your agent/bot to name it accordingly before sending you a download link. 
 
 **Agent wants to send user a file:**
 1. Agent runs: `node upload.js /path/to/file`
