@@ -1,10 +1,9 @@
 #!/usr/bin/env node
 const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
-const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
-const { GetObjectCommand } = require('@aws-sdk/client-s3');
 const fs = require('fs');
 const path = require('path');
 const config = require('./config.json');
+const { generateDownloadUrl } = require('./download-url.js');
 
 const s3Client = new S3Client({ region: config.region });
 const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
@@ -64,28 +63,17 @@ async function uploadFile(filePath, s3Key) {
     await s3Client.send(command);
     console.log(`✅ Upload complete!`);
 
-    // Generate download URL
-    const downloadUrl = await generateDownloadUrl(key);
+    // Generate download URL using the hybrid approach from download-url.js
+    const downloadUrl = await generateDownloadUrl(key, config.defaultExpirationHours);
     
     const fileSize = (fileContent.length / 1024).toFixed(2);
     console.log(`\n📦 File: ${key} (${fileSize} KB)`);
-    console.log(`🔗 Download URL (${config.defaultExpirationHours}h):\n${downloadUrl}`);
 
     return { key, downloadUrl };
   } catch (err) {
     console.error('❌ Upload failed');
     throw new Error('Upload operation failed');
   }
-}
-
-async function generateDownloadUrl(key) {
-  const command = new GetObjectCommand({
-    Bucket: config.bucketName,
-    Key: key,
-  });
-
-  const expiresIn = config.defaultExpirationHours * 3600;
-  return await getSignedUrl(s3Client, command, { expiresIn });
 }
 
 function getContentType(filename) {
@@ -122,4 +110,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { uploadFile, generateDownloadUrl };
+module.exports = { uploadFile };
